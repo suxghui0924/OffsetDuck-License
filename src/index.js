@@ -176,8 +176,8 @@ app.get('/api/load', async (req, res) => {
         await pool.query('INSERT INTO access_logs (license_key, roblox_id, ip) VALUES ($1, $2, $3)', [key, uid, req.ip]);
 
         // Code Protection (Base64 + dynamic loading)
-        const rawCode = `print("[VISTA] Script Loaded Successfully!"); loadstring(game:HttpGet("${license.script_url}"))();`;
-        const protectedCode = `-- Protected by Vista\nlocal d="${Buffer.from(rawCode).toString('base64')}";loadstring(game:GetService("HttpService"):Base64Decode(d))()`;
+        const rawCode = `print("[OffsetDuck] Script Loaded Successfully!"); loadstring(game:HttpGet("${license.script_url}"))();`;
+        const protectedCode = `-- Protected by OffsetDuck\nlocal d="${Buffer.from(rawCode).toString('base64')}";loadstring(game:GetService("HttpService"):Base64Decode(d))()`;
 
         res.send(protectedCode);
 
@@ -277,14 +277,14 @@ app.post('/api/admin/licenses/generate', isAdmin, adminIpMiddleware, async (req,
     try {
         const keys = [];
         for (let i = 0; i < amount; i++) {
-            const key = `VISTA-${Math.random().toString(36).substring(2, 7).toUpperCase()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+            const key = `OD-${Math.random().toString(36).substring(2, 7).toUpperCase()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
             await pool.query(
                 'INSERT INTO licenses (key, project_id, duration_days, created_by) VALUES ($1, $2, $3, $4)',
                 [key, project_id, duration, req.user.id]
             );
             keys.push(key);
         }
-        res.json({ success: true, keys });
+        res.text(`Generated ${amount} keys successfully.`);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

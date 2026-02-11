@@ -10,10 +10,15 @@ const client = new Client({
     ]
 });
 
+// Database Setup
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false }
 });
+
+// Branding Config
+const BRAND_NAME = "OffsetDuck";
+const KEY_PREFIX = "OD";
 
 // Update the event to clientReady for v14/15 compatibility
 client.once('clientReady', (c) => {
@@ -38,7 +43,7 @@ client.on('messageCreate', async (message) => {
         const projRes = await pool.query('SELECT id FROM projects WHERE name = $1', [projName]);
         if (projRes.rows.length === 0) return message.reply('Project not found.');
 
-        const key = `VISTA-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+        const key = `${KEY_PREFIX}-${Math.random().toString(36).substring(2, 7).toUpperCase()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
 
         await pool.query(
             'INSERT INTO licenses (key, project_id, duration_days, created_by, owner_discord_id) VALUES ($1, $2, $3, $4, $5)',
@@ -46,7 +51,7 @@ client.on('messageCreate', async (message) => {
         );
 
         const embed = new EmbedBuilder()
-            .setTitle('License Generated')
+            .setTitle(`🔑 ${BRAND_NAME} License Generated`)
             .setColor(0x00ff00)
             .addFields(
                 { name: 'Key', value: `\`${key}\`` },
