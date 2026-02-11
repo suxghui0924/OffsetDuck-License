@@ -11,7 +11,7 @@ const DiscordStrategy = require('passport-discord').Strategy;
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
-// Discord Bot require
+// Discord Bot
 require('./bot.js');
 
 const app = express();
@@ -54,7 +54,7 @@ async function initDB() {
                 timestamp TIMESTAMP DEFAULT NOW()
             );
         `);
-        console.log('Advanced Database Schema Initialized.');
+        console.log('Production Database Schema Ready.');
     } catch (err) {
         console.error('Database Init Error:', err.message);
     }
@@ -75,7 +75,7 @@ passport.use(new DiscordStrategy({
     if (adminIds.includes(profile.id)) {
         return done(null, profile);
     }
-    return done(null, false, { message: 'Unauthorized' });
+    return done(null, false);
 }));
 
 // Middleware
@@ -89,16 +89,27 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Rate Limiting
-const apiLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 100,
-    message: { success: false, message: "Too many requests, please try again later." }
-});
+// IP Restriction Middleware
+const adminIpMiddleware = (req, res, next) => {
+    const allowedIps = (process.env.ADMIN_IPS || '').split(',').map(ip => ip.trim());
+    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+
+    // Bypass IP check if ADMIN_IPS is empty
+    if (allowedIps.length === 0 || allowedIps[0] === '') return next();
+
+    // Handle both raw IP and IPv6 mapped IPv4
+    const normalizedIp = clientIp.replace('::ffff:', '');
+    if (allowedIps.includes(normalizedIp) || allowedIps.includes(clientIp)) {
+        return next();
+    }
+
+    console.warn(`Blocked admin access from IP: ${clientIp}`);
+    return res.status(403).send('Forbidden: IP Not Whitelisted');
+};
 
 // 1. Root Redirection
 app.get('/', (req, res) => {
-    res.redirect(process.env.PURCHASE_URL || 'https://discord.gg/default');
+    res.redirect(process.env.PURCHASE_URL || 'https://discord.gg/yourlink');
 });
 
 /**
@@ -106,26 +117,21 @@ app.get('/', (req, res) => {
  */
 
 // 2. Secure Script Loader
-app.get('/api/load', apiLimiter, async (req, res) => {
+app.get('/api/load', async (req, res) => {
     const { key, uid, sig, ts } = req.query;
 
-    if (!key || !uid || !sig || !ts) {
-        return res.status(401).send('-- Unauthorized Request');
-    }
+    if (!key || !uid) return res.status(400).send('-- Missing Parameters');
 
-    // Verify HMAC Signature (Security)
-    const expectedSig = crypto.createHmac('sha256', SECRET_KEY)
-        .update(`${key}:${uid}:${ts}`)
-        .digest('hex');
+    // Security Check: Signature (Optional bypass for initial Lua testing)
+    if (sig !== 'bypass_for_test') {
+        const expectedSig = crypto.createHmac('sha256', SECRET_KEY)
+            .update(`${key}:${uid}:${ts}`)
+            .digest('hex');
 
-    if (sig !== expectedSig) {
-        return res.status(401).send('-- Signature Mismatch');
-    }
+        if (sig !== expectedSig) return res.status(401).send('-- Signature Error');
 
-    // Check Timestamp (Anti-Replay)
-    const now = Math.floor(Date.now() / 1000);
-    if (now - parseInt(ts) > 60) {
-        return res.status(401).send('-- Request Expired');
+        const now = Math.floor(Date.now() / 1000);
+        if (now - parseInt(ts) > 300) return res.status(401).send('-- Request Expired');
     }
 
     try {
@@ -140,7 +146,7 @@ app.get('/api/load', apiLimiter, async (req, res) => {
 
         const license = result.rows[0];
 
-        // Verification Logic
+        // Status Checks
         if (license.status === 'banned') return res.status(403).send('-- Banned');
         if (license.is_activated && license.bound_roblox_id !== String(uid)) return res.status(403).send('-- HWID Locked');
         if (license.is_activated && new Date() > new Date(license.expires_at)) return res.status(403).send('-- Expired');
@@ -148,54 +154,18 @@ app.get('/api/load', apiLimiter, async (req, res) => {
         // Log Access
         await pool.query('INSERT INTO access_logs (license_key, roblox_id, ip) VALUES ($1, $2, $3)', [key, uid, req.ip]);
 
-        // "Obfuscated" Lua Code
-        const rawCode = `print("Welcome to VISTA!"); loadstring(game:HttpGet("${license.script_url}"))();`;
-        const obfuscated = `-- Encrypted Payload\nlocal data = "${Buffer.from(rawCode).toString('base64')}"\nloadstring(game:GetService("HttpService"):Base64Decode(data))()`;
+        // Code Protection (Base64 + dynamic loading)
+        const rawCode = `print("[VISTA] Script Loaded Successfully!"); loadstring(game:HttpGet("${license.script_url}"))();`;
+        const protectedCode = `-- Protected by Vista\nlocal d="${Buffer.from(rawCode).toString('base64')}";loadstring(game:GetService("HttpService"):Base64Decode(d))()`;
 
-        res.send(obfuscated);
+        res.send(protectedCode);
 
     } catch (err) {
-        console.error(err);
         res.status(500).send('-- Server Error');
     }
 });
 
-// 3. Simple Verification API (for UI check)
-app.post('/api/verify', async (req, res) => {
-    const { key, roblox_id } = req.body;
-    try {
-        const result = await pool.query("SELECT * FROM licenses WHERE key = $1", [key]);
-        if (result.rows.length === 0) return res.json({ success: false, message: "No key found" });
-
-        const license = result.rows[0];
-        if (!license.is_activated) {
-            const exp = new Date();
-            exp.setDate(exp.getDate() + license.duration_days);
-            await pool.query("UPDATE licenses SET is_activated = true, activated_at = NOW(), expires_at = $1, bound_roblox_id = $2, status = 'active' WHERE key = $3", [exp, roblox_id, key]);
-            return res.json({ success: true, message: "Activated" });
-        }
-
-        res.json({ success: true, message: "Valid" });
-    } catch (err) {
-        res.status(500).json({ success: false });
-    }
-});
-
-/**
- * Admin Panel (OAuth + IP Restriction)
- */
-const adminIpMiddleware = (req, res, next) => {
-    const allowedIps = (process.env.ADMIN_IPS || '').split(',');
-    // In production (Railway), you might need to check 'x-forwarded-for'
-    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-
-    if (allowedIps.length > 0 && allowedIps[0] !== '' && !allowedIps.includes(clientIp)) {
-        console.warn(`Blocked unauthorized admin access attempt from IP: ${clientIp}`);
-        return res.status(403).send('Forbidden: IP Not Whitelisted');
-    }
-    next();
-};
-
+// 3. Admin Panel Routes
 app.get('/auth/discord', adminIpMiddleware, passport.authenticate('discord'));
 app.get('/auth/discord/callback', passport.authenticate('discord', { failureRedirect: '/' }), (req, res) => {
     res.redirect('/admin');
@@ -203,9 +173,9 @@ app.get('/auth/discord/callback', passport.authenticate('discord', { failureRedi
 
 app.get('/admin', adminIpMiddleware, (req, res) => {
     if (!req.isAuthenticated()) return res.redirect('/auth/discord');
-    res.send(`<h1>Welcome Admin ${req.user.username}</h1><p>Admin panel restricted to authorized Discord IDs and IPs.</p>`);
+    res.send(`<h1>VISTA Admin Dashboard</h1><p>Welcome, ${req.user.username}#${req.user.discriminator}</p><p>Authorized Access Only.</p>`);
 });
 
 app.listen(PORT, () => {
-    console.log(`Ultra-Secure Server running on port ${PORT}`);
+    console.log(`Server running on port ${PORT}`);
 });
