@@ -17,14 +17,14 @@ const pool = new Pool({
 
 // Update the event to clientReady for v15 compatibility / warning avoidance
 client.once('ready', () => {
-    console.log(`Discord Bot Online: ${client.user.tag}`);
+    console.log(`[DISCORD] Online as ${client.user.tag}`);
 });
 
 // Command: !gen [project] [days] [@user]
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.content.startsWith('!gen')) return;
 
-    const adminIds = (process.env.ADMIN_DISCORD_IDS || '').split(',');
+    const adminIds = (process.env.ADMIN_DISCORD_IDS || '').split(',').map(id => id.trim());
     if (!adminIds.includes(message.author.id)) return;
 
     const args = message.content.split(' ');
@@ -64,6 +64,14 @@ client.on('messageCreate', async (message) => {
     }
 });
 
-if (process.env.DISCORD_TOKEN) client.login(process.env.DISCORD_TOKEN);
+// Safe Login
+if (process.env.DISCORD_TOKEN && process.env.DISCORD_TOKEN !== 'your_real_discord_bot_token') {
+    client.login(process.env.DISCORD_TOKEN).catch(err => {
+        console.error('[DISCORD] Login Failed:', err.message);
+        console.warn('[DISCORD] Server will continue running without the bot.');
+    });
+} else {
+    console.warn('[DISCORD] Valid DISCORD_TOKEN not found. Bot skipped.');
+}
 
 module.exports = client;

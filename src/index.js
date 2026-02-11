@@ -61,22 +61,28 @@ async function initDB() {
 }
 initDB();
 
-// Passport Discord Config
-passport.serializeUser((user, done) => done(null, user));
-passport.deserializeUser((obj, done) => done(null, obj));
+// Passport Discord Strategy Setup
+const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
+const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
+const DISCORD_CALLBACK_URL = process.env.DISCORD_CALLBACK_URL;
 
-passport.use(new DiscordStrategy({
-    clientID: process.env.DISCORD_CLIENT_ID,
-    clientSecret: process.env.DISCORD_CLIENT_SECRET,
-    callbackURL: process.env.DISCORD_CALLBACK_URL,
-    scope: ['identify']
-}, (accessToken, refreshToken, profile, done) => {
-    const adminIds = (process.env.ADMIN_DISCORD_IDS || '').split(',');
-    if (adminIds.includes(profile.id)) {
-        return done(null, profile);
-    }
-    return done(null, false);
-}));
+if (DISCORD_CLIENT_ID && DISCORD_CLIENT_SECRET && DISCORD_CALLBACK_URL) {
+    passport.use(new DiscordStrategy({
+        clientID: DISCORD_CLIENT_ID,
+        clientSecret: DISCORD_CLIENT_SECRET,
+        callbackURL: DISCORD_CALLBACK_URL,
+        scope: ['identify']
+    }, (accessToken, refreshToken, profile, done) => {
+        const adminIds = (process.env.ADMIN_DISCORD_IDS || '').split(',').map(id => id.trim());
+        if (adminIds.includes(profile.id)) {
+            return done(null, profile);
+        }
+        return done(null, false);
+    }));
+} else {
+    console.error('[AUTH] Missing Discord OAuth credentials in environment variables.');
+    console.warn('[AUTH] Admin login features will be disabled.');
+}
 
 // Middleware
 app.use(cors());
