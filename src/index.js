@@ -205,9 +205,126 @@ app.get('/auth/discord/callback', (req, res, next) => {
     })(req, res, next);
 });
 
+/** 
+ * Admin API Endpoints (Protected)
+ */
+
+const isAdmin = (req, res, next) => {
+    if (req.isAuthenticated()) return next();
+    res.status(401).json({ success: false, message: "Unauthorized" });
+};
+
+app.get('/api/admin/stats', isAdmin, adminIpMiddleware, async (req, res) => {
+    try {
+        const stats = await pool.query(`
+            SELECT 
+                (SELECT COUNT(*) FROM licenses) as total_keys,
+                (SELECT COUNT(*) FROM licenses WHERE is_activated = true) as active_keys,
+                (SELECT COUNT(*) FROM licenses WHERE status = 'banned') as banned_keys,
+                (SELECT COUNT(*) FROM projects) as total_projects,
+                (SELECT COUNT(*) FROM access_logs WHERE timestamp > NOW() - INTERVAL '24 hours') as loads_24h
+        `);
+        res.json(stats.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/admin/projects', isAdmin, adminIpMiddleware, async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM projects ORDER BY id DESC');
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/admin/projects', isAdmin, adminIpMiddleware, async (req, res) => {
+    const { name, script_url } = req.body;
+    try {
+        await pool.query('INSERT INTO projects (name, script_url, maintainer_id) VALUES ($1, $2, $3)', [name, script_url, req.user.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.delete('/api/admin/projects/:id', isAdmin, adminIpMiddleware, async (req, res) => {
+    try {
+        await pool.query('DELETE FROM projects WHERE id = $1', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/admin/licenses', isAdmin, adminIpMiddleware, async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT l.*, p.name as project_name 
+            FROM licenses l 
+            JOIN projects p ON l.project_id = p.id 
+            ORDER BY l.activated_at DESC NULLS LAST, l.key ASC
+        `);
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/admin/licenses/generate', isAdmin, adminIpMiddleware, async (req, res) => {
+    const { project_id, duration, amount } = req.body;
+    try {
+        const keys = [];
+        for (let i = 0; i < amount; i++) {
+            const key = `VISTA-${Math.random().toString(36).substring(2, 7).toUpperCase()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+            await pool.query(
+                'INSERT INTO licenses (key, project_id, duration_days, created_by) VALUES ($1, $2, $3, $4)',
+                [key, project_id, duration, req.user.id]
+            );
+            keys.push(key);
+        }
+        res.json({ success: true, keys });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.patch('/api/admin/licenses/:key', isAdmin, adminIpMiddleware, async (req, res) => {
+    const { action } = req.body;
+    const { key } = req.params;
+    try {
+        if (action === 'ban') {
+            await pool.query("UPDATE licenses SET status = 'banned' WHERE key = $1", [key]);
+        } else if (action === 'unban') {
+            await pool.query("UPDATE licenses SET status = 'active' WHERE key = $1", [key]);
+        } else if (action === 'reset_hwid') {
+            await pool.query("UPDATE licenses SET bound_roblox_id = NULL WHERE key = $1", [key]);
+        }
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.delete('/api/admin/licenses/:key', isAdmin, adminIpMiddleware, async (req, res) => {
+    try {
+        await pool.query("DELETE FROM licenses WHERE key = $1", [req.params.key]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.get('/admin', adminIpMiddleware, (req, res) => {
     if (!req.isAuthenticated()) return res.redirect('/auth/discord');
-    res.send(`<h1>VISTA Admin Dashboard</h1><p>Welcome, ${req.user.username}#${req.user.discriminator}</p><p>Authorized Access Only.</p>`);
+    res.sendFile(path.join(__dirname, '../public/admin/index.html'));
+});
+
+app.get('/admin/logout', (req, res) => {
+    req.logout(() => {
+        res.redirect('/');
+    });
 });
 
 app.listen(PORT, () => {

@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VISTA Admin Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root {
+            --bg-deep: #0a0a0c;
+            --bg-card: #141417;
+            --accent: #6366f1;
+            --accent-glow: rgba(99, 102, 241, 0.3);
+            --text-main: #e2e8f0;
+            --text-dim: #94a3b8;
+            --border: rgba(255, 255, 255, 0.1);
+            --danger: #ef4444;
+            --success: #22c55e;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-deep);
+            color: var(--text-main);
+            display: flex;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 260px;
+            background: var(--bg-card);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            padding: 2rem 1.5rem;
+            position: fixed;
+            height: 100vh;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 2.5rem;
+            background: linear-gradient(to right, #6366f1, #a855f7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .nav-btn {
+            padding: 0.75rem 1rem;
+            margin-bottom: 0.5rem;
+            border-radius: 8px;
+            color: var(--text-dim);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transition: all 0.2s;
+            cursor: pointer;
+            border: none;
+            background: transparent;
+            width: 100%;
+            font-size: 0.95rem;
+        }
+
+        .nav-btn:hover,
+        .nav-btn.active {
+            background: rgba(99, 102, 241, 0.1);
+            color: var(--accent);
+        }
+
+        /* Main Content */
+        .main {
+            margin-left: 260px;
+            flex: 1;
+            padding: 2rem 3rem;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2.5rem;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 3rem;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            padding: 1.5rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        .stat-card h3 {
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-card p {
+            font-size: 1.75rem;
+            font-weight: 700;
+        }
+
+        /* Tables & Content */
+        .section-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            animation: fadeIn 0.4s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .table-container {
+            overflow-x: auto;
+            margin-top: 1rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        th {
+            text-align: left;
+            padding: 1rem;
+            color: var(--text-dim);
+            font-weight: 500;
+            border-bottom: 1px solid var(--border);
+        }
+
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .status-pill {
+            padding: 0.2rem 0.6rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .pill-active {
+            background: rgba(34, 197, 94, 0.15);
+            color: var(--success);
+        }
+
+        .pill-waiting {
+            background: rgba(234, 179, 8, 0.15);
+            color: #eab308;
+        }
+
+        .pill-banned {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--danger);
+        }
+
+        /* Forms & Buttons */
+        .btn-primary {
+            background: var(--accent);
+            color: white;
+            border: none;
+            padding: 0.6rem 1.2rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: 0.2s;
+        }
+
+        .btn-primary:hover {
+            opacity: 0.9;
+            box-shadow: 0 0 15px var(--accent-glow);
+        }
+
+        .btn-icon {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-dim);
+            padding: 0.4rem;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .btn-icon:hover {
+            color: var(--text-main);
+            border-color: var(--text-dim);
+        }
+
+        .btn-icon.danger:hover {
+            color: var(--danger);
+            border-color: var(--danger);
+        }
+
+        /* Modal Overlay */
+        #modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(4px);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            width: 90%;
+            max-width: 500px;
+            padding: 2rem;
+            border-radius: 16px;
+        }
+
+        .modal input,
+        .modal select {
+            width: 100%;
+            background: #1e1e22;
+            border: 1px solid var(--border);
+            color: white;
+            padding: 0.8rem;
+            margin-top: 1rem;
+            border-radius: 8px;
+            outline: none;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="sidebar">
+        <div class="logo">
+            <i data-lucide="shield-check"></i> VISTA
+        </div>
+        <button class="nav-btn active" onclick="showTab('dashboard')">
+            <i data-lucide="layout-dashboard"></i> Dashboard
+        </button>
+        <button class="nav-btn" onclick="showTab('projects')">
+            <i data-lucide="folder"></i> Projects
+        </button>
+        <button class="nav-btn" onclick="showTab('licenses')">
+            <i data-lucide="key"></i> Licenses
+        </button>
+        <div style="flex: 1;"></div>
+        <a href="/admin/logout" class="nav-btn">
+            <i data-lucide="log-out"></i> Logout
+        </a>
+    </div>
+
+    <div class="main">
+        <header>
+            <h1 id="tab-title">Dashboard</h1>
+            <div id="action-btn-container"></div>
+        </header>
+
+        <!-- Dashboard Tab -->
+        <div id="tab-dashboard">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>Total Keys</h3>
+                    <p id="stat-total-keys">0</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Active Keys</h3>
+                    <p id="stat-active-keys">0</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Banned Keys</h3>
+                    <p id="stat-banned-keys">0</p>
+                </div>
+                <div class="stat-card">
+                    <h3>24h Loads</h3>
+                    <p id="stat-loads">0</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Projects Tab -->
+        <div id="tab-projects" class="hidden">
+            <div class="section-card">
+                <div class="table-container">
+                    <table id="projects-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Script URL</th>
+                                <th>Maintainer ID</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Licenses Tab -->
+        <div id="tab-licenses" class="hidden">
+            <div class="section-card">
+                <div class="table-container">
+                    <table id="licenses-table">
+                        <thead>
+                            <tr>
+                                <th>Key</th>
+                                <th>Project</th>
+                                <th>Roblox ID</th>
+                                <th>Duration</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Overlay -->
+    <div id="modal-overlay">
+        <div class="modal" id="modal-content"></div>
+    </div>
+
+    <script>
+        lucide.createIcons();
+
+        let currentTab = 'dashboard';
+
+        async function fetchStats() {
+            const res = await fetch('/api/admin/stats');
+            const data = await res.json();
+            document.getElementById('stat-total-keys').innerText = data.total_keys;
+            document.getElementById('stat-active-keys').innerText = data.active_keys;
+            document.getElementById('stat-banned-keys').innerText = data.banned_keys;
+            document.getElementById('stat-loads').innerText = data.loads_24h;
+        }
+
+        async function fetchProjects() {
+            const res = await fetch('/api/admin/projects');
+            const data = await res.json();
+            const tbody = document.querySelector('#projects-table tbody');
+            tbody.innerHTML = data.map(p => `
+                <tr>
+                    <td>${p.name}</td>
+                    <td style="color: var(--text-dim)">${p.script_url.substring(0, 30)}...</td>
+                    <td>${p.maintainer_id}</td>
+                    <td>
+                        <button class="btn-icon danger" onclick="deleteProject(${p.id})"><i data-lucide="trash-2"></i></button>
+                    </td>
+                </tr>
+            `).join('');
+            lucide.createIcons();
+        }
+
+        async function fetchLicenses() {
+            const res = await fetch('/api/admin/licenses');
+            const data = await res.json();
+            const tbody = document.querySelector('#licenses-table tbody');
+            tbody.innerHTML = data.map(l => `
+                <tr>
+                    <td style="font-family: monospace;">${l.key}</td>
+                    <td style="font-weight: 600;">${l.project_name}</td>
+                    <td>${l.bound_roblox_id || 'Not Bound'}</td>
+                    <td>${l.duration_days} Days</td>
+                    <td><span class="status-pill pill-${l.status}">${l.status.toUpperCase()}</span></td>
+                    <td>
+                        <div style="display: flex; gap: 8px;">
+                            <button title="Reset HWID" class="btn-icon" onclick="updateLicense('${l.key}', 'reset_hwid')"><i data-lucide="refresh-cw"></i></button>
+                            ${l.status === 'banned' ?
+                    `<button title="Unban" class="btn-icon" onclick="updateLicense('${l.key}', 'unban')"><i data-lucide="unlock"></i></button>` :
+                    `<button title="Ban" class="btn-icon danger" onclick="updateLicense('${l.key}', 'ban')"><i data-lucide="ban"></i></button>`
+                }
+                            <button title="Delete" class="btn-icon danger" onclick="deleteLicense('${l.key}')"><i data-lucide="trash-2"></i></button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+            lucide.createIcons();
+        }
+
+        function showTab(tab) {
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            document.querySelector(`[onclick="showTab('${tab}')"]`).classList.add('active');
+
+            document.getElementById('tab-dashboard').classList.add('hidden');
+            document.getElementById('tab-projects').classList.add('hidden');
+            document.getElementById('tab-licenses').classList.add('hidden');
+
+            document.getElementById(`tab-${tab}`).classList.remove('hidden');
+            document.getElementById('tab-title').innerText = tab.charAt(0).toUpperCase() + tab.slice(1);
+
+            const actionBtn = document.getElementById('action-btn-container');
+            if (tab === 'projects') {
+                actionBtn.innerHTML = `<button class="btn-primary" onclick="openAddProjectModal()">+ Add Project</button>`;
+            } else if (tab === 'licenses') {
+                actionBtn.innerHTML = `<button class="btn-primary" onclick="openGenKeyModal()">+ Generate Keys</button>`;
+            } else {
+                actionBtn.innerHTML = '';
+            }
+
+            if (tab === 'dashboard') fetchStats();
+            if (tab === 'projects') fetchProjects();
+            if (tab === 'licenses') fetchLicenses();
+        }
+
+        // Modals & Actions
+        function openAddProjectModal() {
+            const overlay = document.getElementById('modal-overlay');
+            const content = document.getElementById('modal-content');
+            content.innerHTML = `
+                <h2>Add New Project</h2>
+                <input type="text" id="p-name" placeholder="Project Name (e.g. PrisonLife)">
+                <input type="text" id="p-url" placeholder="Main Script URL (Hosted code)">
+                <div style="display: flex; gap: 10px; margin-top: 1.5rem;">
+                    <button class="btn-primary" onclick="createProject()">Create</button>
+                    <button class="btn-icon" onclick="closeModal()">Cancel</button>
+                </div>
+            `;
+            overlay.style.display = 'flex';
+        }
+
+        async function createProject() {
+            const name = document.getElementById('p-name').value;
+            const script_url = document.getElementById('p-url').value;
+            await fetch('/api/admin/projects', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, script_url })
+            });
+            closeModal();
+            fetchProjects();
+        }
+
+        async function openGenKeyModal() {
+            const projs = await (await fetch('/api/admin/projects')).json();
+            const overlay = document.getElementById('modal-overlay');
+            const content = document.getElementById('modal-content');
+            content.innerHTML = `
+                <h2>Generate Licenses</h2>
+                <select id="g-proj">${projs.map(p => `<option value="${p.id}">${p.name}</option>`).join('')}</select>
+                <input type="number" id="g-days" placeholder="Duration (Days)" value="30">
+                <input type="number" id="g-amount" placeholder="Amount of keys" value="1">
+                <div style="display: flex; gap: 10px; margin-top: 1.5rem;">
+                    <button class="btn-primary" onclick="generateKeys()">Generate</button>
+                    <button class="btn-icon" onclick="closeModal()">Cancel</button>
+                </div>
+                <div id="gen-results" style="margin-top: 1rem; max-height: 100px; overflow-y: auto; font-family: monospace; font-size: 0.8rem;"></div>
+            `;
+            overlay.style.display = 'flex';
+        }
+
+        async function generateKeys() {
+            const project_id = document.getElementById('g-proj').value;
+            const duration = document.getElementById('g-days').value;
+            const amount = document.getElementById('g-amount').value;
+            const res = await fetch('/api/admin/licenses/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ project_id, duration, amount })
+            });
+            const data = await res.json();
+            if (data.success) {
+                document.getElementById('gen-results').innerHTML = data.keys.map(k => `<div>${k}</div>`).join('');
+                fetchLicenses();
+            }
+        }
+
+        // Generic delete/update
+        async function deleteProject(id) { if (confirm('Delete project?')) { await fetch(`/api/admin/projects/${id}`, { method: 'DELETE' }); fetchProjects(); } }
+        async function deleteLicense(key) { if (confirm('Delete license?')) { await fetch(`/api/admin/licenses/${key}`, { method: 'DELETE' }); fetchLicenses(); } }
+        async function updateLicense(key, action) { await fetch(`/api/admin/licenses/${key}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }) }); fetchLicenses(); }
+
+        function closeModal() { document.getElementById('modal-overlay').style.display = 'none'; }
+
+        showTab('dashboard');
+    </script>
+</body>
+
+</html>
