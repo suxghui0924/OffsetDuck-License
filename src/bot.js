@@ -15,9 +15,9 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
-// Update the event to clientReady for v15 compatibility / warning avoidance
-client.once('ready', () => {
-    console.log(`[DISCORD] Online as ${client.user.tag}`);
+// Update the event to clientReady for v14/15 compatibility
+client.once('clientReady', (c) => {
+    console.log(`[DISCORD] Online as ${c.user.tag}`);
 });
 
 // Command: !gen [project] [days] [@user]
