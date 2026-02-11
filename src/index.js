@@ -60,9 +60,9 @@ async function initDB() {
                 timestamp TIMESTAMP DEFAULT NOW()
             );
         `);
-        console.log('Production Database Schema Ready.');
+        console.log('[OffsetDuck] Database Schema Ready.');
     } catch (err) {
-        console.error('Database Init Error:', err.message);
+        console.error('[DB ERROR]:', err.message);
     }
 }
 initDB();
