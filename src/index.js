@@ -182,16 +182,28 @@ app.post('/api/verify', async (req, res) => {
 });
 
 /**
- * Admin Panel (OAuth)
+ * Admin Panel (OAuth + IP Restriction)
  */
-app.get('/auth/discord', passport.authenticate('discord'));
+const adminIpMiddleware = (req, res, next) => {
+    const allowedIps = (process.env.ADMIN_IPS || '').split(',');
+    // In production (Railway), you might need to check 'x-forwarded-for'
+    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+
+    if (allowedIps.length > 0 && allowedIps[0] !== '' && !allowedIps.includes(clientIp)) {
+        console.warn(`Blocked unauthorized admin access attempt from IP: ${clientIp}`);
+        return res.status(403).send('Forbidden: IP Not Whitelisted');
+    }
+    next();
+};
+
+app.get('/auth/discord', adminIpMiddleware, passport.authenticate('discord'));
 app.get('/auth/discord/callback', passport.authenticate('discord', { failureRedirect: '/' }), (req, res) => {
     res.redirect('/admin');
 });
 
-app.get('/admin', (req, res) => {
+app.get('/admin', adminIpMiddleware, (req, res) => {
     if (!req.isAuthenticated()) return res.redirect('/auth/discord');
-    res.send(`<h1>Welcome Admin ${req.user.username}</h1><p>Admin panel restricted to authorized Discord IDs.</p>`);
+    res.send(`<h1>Welcome Admin ${req.user.username}</h1><p>Admin panel restricted to authorized Discord IDs and IPs.</p>`);
 });
 
 app.listen(PORT, () => {
