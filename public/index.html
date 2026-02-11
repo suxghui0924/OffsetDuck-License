@@ -1,38 +1,136 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>라이센스 관리 시스템</title>
+    <title>License Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --text-color: #f1f5f9;
+            --accent: #3b82f6;
+            --success: #10b981;
+        }
+
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Inter', sans-serif;
             margin: 0;
-            background-color: #f0f2f5;
-        }
-        .container {
-            text-align: center;
             padding: 2rem;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
         h1 {
-            color: #1a73e8;
+            margin: 0;
+            font-size: 1.5rem;
+            color: var(--accent);
         }
-        p {
-            color: #5f6368;
+
+        .btn {
+            background: var(--accent);
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .card {
+            background: var(--card-bg);
+            padding: 1.5rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+
+        th {
+            text-align: left;
+            padding: 1rem;
+            border-bottom: 1px solid #334155;
+        }
+
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid #334155;
+        }
+
+        .status-badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            background: #334155;
+        }
+
+        .status-active {
+            background: var(--success);
         }
     </style>
 </head>
+
 <body>
     <div class="container">
-        <h1>라이센스 서버가 정상 작동 중입니다</h1>
-        <p>Railway에 성공적으로 배포되었습니다.</p>
+        <header>
+            <h1>License Control Panel</h1>
+            <button class="btn" onclick="alert('In Development')">Create Project</button>
+        </header>
+
+        <div class="card">
+            <h2>Active Licenses</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Key</th>
+                        <th>Project</th>
+                        <th>Status</th>
+                        <th>Owner</th>
+                        <th>Expires In</th>
+                    </tr>
+                </thead>
+                <tbody id="licenseTable">
+                    <!-- Data will be loaded via API -->
+                </tbody>
+            </table>
+        </div>
     </div>
+
+    <script>
+        async function loadLicenses() {
+            const resp = await fetch('/api/licenses');
+            const data = await resp.json();
+            const table = document.getElementById('licenseTable');
+            table.innerHTML = data.map(l => `
+                <tr>
+                    <td><code>${l.key}</code></td>
+                    <td>${l.project_name}</td>
+                    <td><span class="status-badge ${l.status === 'active' ? 'status-active' : ''}">${l.status.toUpperCase()}</span></td>
+                    <td>${l.owner_discord_id || 'unassigned'}</td>
+                    <td>${l.expires_at ? new Date(l.expires_at).toLocaleDateString() : l.duration_days + 'd'}</td>
+                </tr>
+            `).join('');
+        }
+        loadLicenses();
+    </script>
 </body>
+
 </html>
