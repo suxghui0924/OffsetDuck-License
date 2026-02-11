@@ -3,16 +3,22 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const path = require('path');
 const { Pool } = require('pg');
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
+const session = require('express-session');
+const passport = require('passport');
+const DiscordStrategy = require('passport-discord').Strategy;
+const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
-// Initialize Discord Bot
+// Discord Bot require
 require('./bot.js');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5432;
+const SECRET_KEY = process.env.SECRET_KEY || 'very_secret_default_key';
 
-// PostgreSQL Connection Pool
+// Database Pool
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false }
@@ -21,7 +27,6 @@ const pool = new Pool({
 // Database Initialization
 async function initDB() {
     try {
-        // Projects Table
         await pool.query(`
             CREATE TABLE IF NOT EXISTS projects (
                 id SERIAL PRIMARY KEY,
@@ -29,10 +34,6 @@ async function initDB() {
                 script_url TEXT NOT NULL,
                 maintainer_id TEXT NOT NULL
             );
-        `);
-
-        // Licenses Table
-        await pool.query(`
             CREATE TABLE IF NOT EXISTS licenses (
                 key TEXT PRIMARY KEY,
                 project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
@@ -45,43 +46,86 @@ async function initDB() {
                 expires_at TIMESTAMP,
                 status TEXT DEFAULT 'waiting'
             );
+            CREATE TABLE IF NOT EXISTS access_logs (
+                id SERIAL PRIMARY KEY,
+                license_key TEXT,
+                roblox_id TEXT,
+                ip TEXT,
+                timestamp TIMESTAMP DEFAULT NOW()
+            );
         `);
-        console.log('Database Schema Initialized.');
+        console.log('Advanced Database Schema Initialized.');
     } catch (err) {
         console.error('Database Init Error:', err.message);
     }
 }
 initDB();
 
+// Passport Discord Config
+passport.serializeUser((user, done) => done(null, user));
+passport.deserializeUser((obj, done) => done(null, obj));
+
+passport.use(new DiscordStrategy({
+    clientID: process.env.DISCORD_CLIENT_ID,
+    clientSecret: process.env.DISCORD_CLIENT_SECRET,
+    callbackURL: process.env.DISCORD_CALLBACK_URL,
+    scope: ['identify']
+}, (accessToken, refreshToken, profile, done) => {
+    const adminIds = (process.env.ADMIN_DISCORD_IDS || '').split(',');
+    if (adminIds.includes(profile.id)) {
+        return done(null, profile);
+    }
+    return done(null, false, { message: 'Unauthorized' });
+}));
+
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
-app.use(express.static(path.join(__dirname, '../public')));
+app.use(session({
+    secret: SECRET_KEY,
+    resave: false,
+    saveUninitialized: false
+}));
+app.use(passport.initialize());
+app.use(passport.session());
 
-/** 
- * API Endpoints 
- */
-
-// 1. Project Management (Example)
-app.post('/api/projects', async (req, res) => {
-    const { name, script_url, maintainer_id } = req.body;
-    try {
-        const result = await pool.query(
-            'INSERT INTO projects (name, script_url, maintainer_id) VALUES ($1, $2, $3) RETURNING *',
-            [name, script_url, maintainer_id]
-        );
-        res.json({ success: true, project: result.rows[0] });
-    } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
-    }
+// Rate Limiting
+const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+    message: { success: false, message: "Too many requests, please try again later." }
 });
 
-// 2. License Verification (Roblox Client)
-app.post('/api/verify', async (req, res) => {
-    const { key, roblox_id } = req.body;
+// 1. Root Redirection
+app.get('/', (req, res) => {
+    res.redirect(process.env.PURCHASE_URL || 'https://discord.gg/default');
+});
 
-    if (!key || !roblox_id) {
-        return res.status(400).json({ success: false, message: "Key and Roblox ID required" });
+/**
+ * API Endpoints
+ */
+
+// 2. Secure Script Loader
+app.get('/api/load', apiLimiter, async (req, res) => {
+    const { key, uid, sig, ts } = req.query;
+
+    if (!key || !uid || !sig || !ts) {
+        return res.status(401).send('-- Unauthorized Request');
+    }
+
+    // Verify HMAC Signature (Security)
+    const expectedSig = crypto.createHmac('sha256', SECRET_KEY)
+        .update(`${key}:${uid}:${ts}`)
+        .digest('hex');
+
+    if (sig !== expectedSig) {
+        return res.status(401).send('-- Signature Mismatch');
+    }
+
+    // Check Timestamp (Anti-Replay)
+    const now = Math.floor(Date.now() / 1000);
+    if (now - parseInt(ts) > 60) {
+        return res.status(401).send('-- Request Expired');
     }
 
     try {
@@ -92,70 +136,64 @@ app.post('/api/verify', async (req, res) => {
             WHERE l.key = $1
         `, [key]);
 
-        if (result.rows.length === 0) {
-            return res.json({ success: false, message: "Invalid license key" });
-        }
+        if (result.rows.length === 0) return res.status(403).send('-- Invalid Key');
 
         const license = result.rows[0];
 
-        // Activation Logic
-        if (!license.is_activated) {
-            const expiresAt = new Date();
-            expiresAt.setDate(expiresAt.getDate() + license.duration_days);
+        // Verification Logic
+        if (license.status === 'banned') return res.status(403).send('-- Banned');
+        if (license.is_activated && license.bound_roblox_id !== String(uid)) return res.status(403).send('-- HWID Locked');
+        if (license.is_activated && new Date() > new Date(license.expires_at)) return res.status(403).send('-- Expired');
 
-            await pool.query(`
-                UPDATE licenses SET 
-                    is_activated = true, 
-                    activated_at = NOW(), 
-                    expires_at = $1, 
-                    bound_roblox_id = $2, 
-                    status = 'active' 
-                WHERE key = $3
-            `, [expiresAt, roblox_id, key]);
+        // Log Access
+        await pool.query('INSERT INTO access_logs (license_key, roblox_id, ip) VALUES ($1, $2, $3)', [key, uid, req.ip]);
 
-            return res.json({
-                success: true,
-                message: "License activated!",
-                script: license.script_url,
-                expires_at: expiresAt
-            });
-        }
+        // "Obfuscated" Lua Code
+        const rawCode = `print("Welcome to VISTA!"); loadstring(game:HttpGet("${license.script_url}"))();`;
+        const obfuscated = `-- Encrypted Payload\nlocal data = "${Buffer.from(rawCode).toString('base64')}"\nloadstring(game:GetService("HttpService"):Base64Decode(data))()`;
 
-        // Validation Logic
-        if (license.status === 'banned') return res.json({ success: false, message: "License Banned" });
-        if (license.bound_roblox_id !== String(roblox_id)) return res.json({ success: false, message: "HWID Mismatch" });
-        if (new Date() > new Date(license.expires_at)) {
-            await pool.query("UPDATE licenses SET status = 'expired' WHERE key = $1", [key]);
-            return res.json({ success: false, message: "License Expired" });
-        }
-
-        res.json({
-            success: true,
-            message: "Welcome back!",
-            script: license.script_url,
-            expires_at: license.expires_at
-        });
+        res.send(obfuscated);
 
     } catch (err) {
         console.error(err);
-        res.status(500).json({ success: false, message: "Internal Server Error" });
+        res.status(500).send('-- Server Error');
     }
 });
 
-// 3. Web Dashboard List (Simplified)
-app.get('/api/licenses', async (req, res) => {
+// 3. Simple Verification API (for UI check)
+app.post('/api/verify', async (req, res) => {
+    const { key, roblox_id } = req.body;
     try {
-        const result = await pool.query(`
-            SELECT l.*, p.name as project_name 
-            FROM licenses l 
-            JOIN projects p ON l.project_id = p.id
-        `);
-        res.json(result.rows);
+        const result = await pool.query("SELECT * FROM licenses WHERE key = $1", [key]);
+        if (result.rows.length === 0) return res.json({ success: false, message: "No key found" });
+
+        const license = result.rows[0];
+        if (!license.is_activated) {
+            const exp = new Date();
+            exp.setDate(exp.getDate() + license.duration_days);
+            await pool.query("UPDATE licenses SET is_activated = true, activated_at = NOW(), expires_at = $1, bound_roblox_id = $2, status = 'active' WHERE key = $3", [exp, roblox_id, key]);
+            return res.json({ success: true, message: "Activated" });
+        }
+
+        res.json({ success: true, message: "Valid" });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false });
     }
+});
+
+/**
+ * Admin Panel (OAuth)
+ */
+app.get('/auth/discord', passport.authenticate('discord'));
+app.get('/auth/discord/callback', passport.authenticate('discord', { failureRedirect: '/' }), (req, res) => {
+    res.redirect('/admin');
+});
+
+app.get('/admin', (req, res) => {
+    if (!req.isAuthenticated()) return res.redirect('/auth/discord');
+    res.send(`<h1>Welcome Admin ${req.user.username}</h1><p>Admin panel restricted to authorized Discord IDs.</p>`);
 });
 
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    console.log(`Ultra-Secure Server running on port ${PORT}`);
 });

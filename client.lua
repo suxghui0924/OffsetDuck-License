@@ -1,58 +1,54 @@
--- Roblox Client Script (luau)
+-- Ultra-Secure Loader (client.lua)
 local HttpService = game:GetService("HttpService")
-local UserInputService = game:GetService("UserInputService")
 
-local API_URL = "YOUR_RAILWAY_URL" -- Change this to your Railway URL
-local UserKey = "VISTA-XXXX-XXXX-XXXX" -- Usually input via UI
+local CONFIG = {
+	API_URL = "YOUR_RAILWAY_URL", -- Change to your actual url
+	SECRET_KEY = "yoursecrethmacandjwtkey", -- MUST MATCH .env SECRET_KEY
+	SCRIPT_KEY = "VISTA-XXXX-XXXX-XXXX", -- Input from UI
+}
 
-local function verifyLicense()
-    local hwid = ""
-    pcall(function()
-        hwid = gethwid() -- Works on most exploits
-    end)
-
-    if hwid == "" then
-        hwid = game:GetService("RbxAnalyticsService"):GetClientId() -- Fallback for testing
-    end
-
-    local roblox_id = game.Players.LocalPlayer.UserId
-
-    print("Verifying License...")
-
-    local success, response = pcall(function()
-        return HttpService:RequestAsync({
-            Url = API_URL .. "/api/verify",
-            Method = "POST",
-            Headers = {
-                ["Content-Type"] = "application/json"
-            },
-            Body = HttpService:JSONEncode({
-                key = UserKey,
-                roblox_id = tostring(roblox_id)
-            })
-        })
-    end)
-
-    if not success then
-        warn("API Error: " .. tostring(response))
-        return
-    end
-
-    local data = HttpService:JSONDecode(response.Body)
-
-    if data.success then
-        print("Welcome! Verification Successful.")
-        print("Expires At: " .. (data.expires_at or "N/A"))
-        
-        -- Load the actual script
-        if data.script then
-            loadstring(game:HttpGet(data.script))()
-        end
-    else
-        warn("Verification Failed: " .. data.message)
-        game.Players.LocalPlayer:Kick("\n[License Error]\n" .. data.message)
-    end
+local function generate_sig(key, uid, ts)
+	-- This is a simplified HMAC check in Lua
+	-- For real production, use a proper Lua HMAC-SHA256 implementation
+	-- Here we simulate it with a simple hash string for demonstration
+	-- In real exploit environments, you can use specialized hash functions
+	return "SIGNED_BY_SERVER" -- Placeholder for demo, or implement HMAC-SHA256 here
 end
 
--- Start Verification
-verifyLicense()
+local function loadScript()
+	local uid = tostring(game.Players.LocalPlayer.UserId)
+	local ts = tostring(os.time())
+
+	-- In a real scenario, the signature SHOULD be generated on the server or
+	-- via a secure handshake. For this implementation, we will use a simpler
+	-- query but the server WILL verify it.
+
+	-- IMPORTANT: For the provided server-side HMAC, the client needs a library to sign.
+	-- Most high-end exploits have 'crypt' library.
+
+	local url = string.format(
+		"%s/api/load?key=%s&uid=%s&ts=%s&sig=%s",
+		CONFIG.API_URL,
+		CONFIG.SCRIPT_KEY,
+		uid,
+		ts,
+		"manual_sig_or_server_handshake"
+	)
+
+	print("Authenticating...")
+
+	local success, response = pcall(function()
+		return game:HttpGet(url)
+	end)
+
+	if not success or response:sub(1, 2) == "--" then
+		print("Access Denied: " .. (response or "Unknown Error"))
+		game.Players.LocalPlayer:Kick("\n[VISTA AUTH]\n" .. (response or "Failed"))
+		return
+	end
+
+	print("Success! Executing script...")
+	loadstring(response)()
+end
+
+loadScript()
