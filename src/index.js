@@ -19,9 +19,15 @@ const PORT = process.env.PORT || 5432;
 const SECRET_KEY = process.env.SECRET_KEY || 'very_secret_default_key';
 
 // Database Pool
+const dbUrl = process.env.DATABASE_URL;
+if (dbUrl) {
+    const maskedUrl = dbUrl.replace(/:([^@]+)@/, ':****@');
+    console.log(`[DB] Using Connection: ${maskedUrl}`);
+}
+
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
+    connectionString: dbUrl,
+    ssl: dbUrl && dbUrl.includes('localhost') ? false : { rejectUnauthorized: false }
 });
 
 // Database Initialization
@@ -61,6 +67,10 @@ async function initDB() {
 }
 initDB();
 
+// Passport Session Serialization
+passport.serializeUser((user, done) => done(null, user));
+passport.deserializeUser((obj, done) => done(null, obj));
+
 // Passport Discord Strategy Setup
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
@@ -89,9 +99,14 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(session({
     secret: SECRET_KEY,
-    resave: false,
-    saveUninitialized: false
+    resave: true,
+    saveUninitialized: true,
+    cookie: {
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 24 * 60 * 60 * 1000
+    }
 }));
+app.set('trust proxy', 1); // Required for secure cookies on Railway
 app.use(passport.initialize());
 app.use(passport.session());
 
@@ -173,8 +188,21 @@ app.get('/api/load', async (req, res) => {
 
 // 3. Admin Panel Routes
 app.get('/auth/discord', adminIpMiddleware, passport.authenticate('discord'));
-app.get('/auth/discord/callback', passport.authenticate('discord', { failureRedirect: '/' }), (req, res) => {
-    res.redirect('/admin');
+app.get('/auth/discord/callback', (req, res, next) => {
+    passport.authenticate('discord', (err, user, info) => {
+        if (err) {
+            console.error('[AUTH] Callback Error:', err);
+            return res.status(500).send('<h1>Auth Error</h1><pre>' + err.message + '</pre>');
+        }
+        if (!user) {
+            console.warn('[AUTH] Authentication Failed:', info);
+            return res.redirect('/?error=auth_failed');
+        }
+        req.logIn(user, (err) => {
+            if (err) return next(err);
+            return res.redirect('/admin');
+        });
+    })(req, res, next);
 });
 
 app.get('/admin', adminIpMiddleware, (req, res) => {
